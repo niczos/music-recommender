@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from torch.utils.data._utils.collate import default_collate
 
 from music_recommender.src.image_utils import transforms
 from music_recommender.src.model import ConvNextTinyEncoder
@@ -15,10 +16,45 @@ from music_recommender.src.utils import get_config, generate_experiment_name
 
 warnings.filterwarnings('ignore')
 
+# ===== NEW: bezpieczny wrapper i collate =====
+class SafeTripletDataset(torch.utils.data.Dataset):
+    """
+    Owijka na TripletRecommendationDataset.
+    Jeœli __getitem__ rzuci FileNotFoundError (brak spektrogramu),
+    zwraca None i zwiêksza licznik pominiêæ.
+    """
+    def __init__(self, base_ds):
+        self.base = base_ds
+        self.skipped_missing = 0
+
+    def __len__(self):
+        return len(self.base)
+
+    def __getitem__(self, idx):
+        try:
+            return self.base[idx]
+        except FileNotFoundError:
+            # brak pliku spektrogramu -> pomijamy
+            self.skipped_missing += 1
+            return None
+
+def safe_collate(batch):
+    """Usuwa None'y z batcha (czyli pominiête rekordy)."""
+    batch = [b for b in batch if b is not None]
+    # Je¿eli ca³y batch by³ do wyrzucenia, spróbujemy oddaæ pusty batch
+    # o poprawnym typie — default_collate na pustej liœcie wywali b³¹d,
+    # wiêc w tym rzadkim wypadku zwracamy None i trening pominie taki batch,
+    # jeœli train_model to obs³uguje; je¿eli nie, lepiej utrzymywaæ batch_size
+    # i dane tak, aby do tej sytuacji nie dochodzi³o.
+    if not batch:
+        # Minimalny bezpieczny fallback: zwróæ None.
+        # Jeœli Twój train_model nie toleruje None, ustaw batch_size mniejsze
+        # lub zadbaj, by w batchu zawsze coœ by³o.
+        return None
+    return default_collate(batch)
+# ============================================
+
 def plot_loss_history(training_loss_history, validation_loss_history, filepath='loss_history.png'):
-    """
-    Plot the training and validation loss history.
-    """
     epochs = range(1, len(training_loss_history) + 1)
     plt.figure(figsize=(10, 6))
     plt.plot(epochs, training_loss_history, label='Training Loss')
@@ -48,28 +84,40 @@ def main(config, resume_epoch=0, checkpoint_path=None):
     
     # Initialize model, dataset, and data loaders
     model = ConvNextTinyEncoder(pretrained=False)
+
+    base_train = TripletRecommendationDataset(
+        annotations_file=config["annotations_file"],
+        music_dir=config["music_dir"],
+        music_parts=config["music_parts"],
+        transforms=transforms,
+        temp_dir=config["temp_dir"]
+    )
+    train_ds = SafeTripletDataset(base_train)
+
+    base_val = TripletRecommendationDataset(
+        annotations_file=config["val_annotations_file"],
+        music_dir=config["music_dir"],
+        music_parts=config["music_parts"],
+        transforms=transforms,
+        temp_dir=config["temp_dir"]
+    )
+    val_ds = SafeTripletDataset(base_val)
+
     train_loader = DataLoader(
-        TripletRecommendationDataset(
-            annotations_file=config["annotations_file"],
-            music_dir=config["music_dir"],
-            music_parts=config["music_parts"],
-            transforms=transforms,
-            temp_dir=config["temp_dir"]
-        ),
+        train_ds,
         batch_size=config["batch_size"],
         shuffle=True,
+        num_workers=0,            # wa¿ne dla poprawnego liczenia skipped
+        collate_fn=safe_collate,  # usuwa None
     )
     val_loader = DataLoader(
-        TripletRecommendationDataset(
-            annotations_file=config["val_annotations_file"],
-            music_dir=config["music_dir"],
-            music_parts=config["music_parts"],
-            transforms=transforms,
-            temp_dir=config["temp_dir"]
-        ),
+        val_ds,
         batch_size=config["batch_size"],
         shuffle=False,
+        num_workers=0,
+        collate_fn=safe_collate,
     )
+
     criterion = TripletLoss(margin=config["triplet_loss_margin"])
     optimizer = optim.Adam(model.parameters(), lr=config["lr"])
     
@@ -90,6 +138,11 @@ def main(config, resume_epoch=0, checkpoint_path=None):
     model.save(path=results_dir)
     plot_loss_history(training_loss_history, validation_loss_history,
                       filepath=os.path.join(results_dir, "loss_history.png"))
+
+    # ===== NEW: raport pominiêæ =====
+    skipped_total = train_ds.skipped_missing + val_ds.skipped_missing
+    print(f"[INFO] Pominietych próbek (brak spektrogramu): "
+          f"train={train_ds.skipped_missing}, val={val_ds.skipped_missing}, razem={skipped_total}")
 
 if __name__ == "__main__":
     config = get_config()
