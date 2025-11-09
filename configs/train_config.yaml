@@ -1,0 +1,11 @@
+annotations_file: "/content/drive/MyDrive/music_recommender/metadata.csv"
+val_annotations_file: "/content/drive/MyDrive/music_recommender/val_metadata.csv"
+music_dir: "/content/drive/MyDrive/music_recommender"
+temp_dir: "/content/drive/MyDrive/music_recommender/spectrograms"
+output_dir: "/content/drive/MyDrive/music_recommender/output"
+
+batch_size: 16
+lr: 0.0001
+num_epochs: 30
+triplet_loss_margin: 1.0
+music_parts: ["Chorus", "Verse"]

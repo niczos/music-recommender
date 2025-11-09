@@ -1,0 +1,11 @@
+{
+  'annotations_file': 'C:\Users\skrzy\Music\sample_music\metadata.csv',
+  'music_dir': 'C:\Users\skrzy\Music\sample_music',
+  'music_parts': [ 'Chorus', 'Verse' ],
+  'temp_dir': 'C:\Users\skrzy\Music\sample_music',
+  'models_path': 'C:\Users\skrzy\Music\sample_music',
+  'reference_music': 'Calla - Swagger',
+  'batch_size': 2,
+  'norm': "cosine",
+  'how_many': 5
+}
