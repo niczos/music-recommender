@@ -104,6 +104,7 @@ def main(config, resume_epoch=0, checkpoint_path=None):
         shuffle=True,
         num_workers=0,            # ważne dla poprawnego liczenia skipped
         collate_fn=safe_collate,  # usuwa None
+        drop_last=True, 
     )
     val_loader = DataLoader(
         val_ds,
@@ -111,6 +112,7 @@ def main(config, resume_epoch=0, checkpoint_path=None):
         shuffle=False,
         num_workers=0,
         collate_fn=safe_collate,
+        drop_last=True, 
     )
 
     criterion = TripletLoss(margin=config["triplet_loss_margin"])
