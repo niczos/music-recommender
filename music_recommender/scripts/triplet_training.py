@@ -18,11 +18,11 @@ warnings.filterwarnings('ignore')
 
 # ===== NEW: bezpieczny wrapper i collate =====
 class SafeTripletDataset(torch.utils.data.Dataset):
-    """
+    '''
     Owijka na TripletRecommendationDataset.
     Jeœli __getitem__ rzuci FileNotFoundError (brak spektrogramu),
     zwraca None i zwiêksza licznik pominiêæ.
-    """
+    '''
     def __init__(self, base_ds):
         self.base = base_ds
         self.skipped_missing = 0
@@ -39,7 +39,7 @@ class SafeTripletDataset(torch.utils.data.Dataset):
             return None
 
 def safe_collate(batch):
-    """Usuwa None'y z batcha (czyli pominiête rekordy)."""
+    '''Usuwa None'y z batcha (czyli pominiête rekordy).'''
     batch = [b for b in batch if b is not None]
     # Je¿eli ca³y batch by³ do wyrzucenia, spróbujemy oddaæ pusty batch
     # o poprawnym typie — default_collate na pustej liœcie wywali b³¹d,
