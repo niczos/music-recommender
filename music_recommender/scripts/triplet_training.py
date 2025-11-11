@@ -18,11 +18,7 @@ warnings.filterwarnings('ignore')
 
 # ===== NEW: bezpieczny wrapper i collate =====
 class SafeTripletDataset(torch.utils.data.Dataset):
-    '''
-    Owijka na TripletRecommendationDataset.
-    Jeśli __getitem__ rzuci FileNotFoundError (brak spektrogramu),
-    zwraca None i zwiększa licznik pominięć.
-    '''
+   
     def __init__(self, base_ds):
         self.base = base_ds
         self.skipped_missing = 0
@@ -39,7 +35,6 @@ class SafeTripletDataset(torch.utils.data.Dataset):
             return None
 
 def safe_collate(batch):
-    '''Usuwa None'y z batcha (czyli pominięte rekordy).'''
     batch = [b for b in batch if b is not None]
     # Jeżeli cały batch był do wyrzucenia, spróbujemy oddać pusty batch
     # o poprawnym typie — default_collate na pustej liście wywali błąd,
