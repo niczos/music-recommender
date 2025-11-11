@@ -1,4 +1,4 @@
-from typing import Callable
+﻿from typing import Callable
 
 from torch.utils.data import DataLoader
 

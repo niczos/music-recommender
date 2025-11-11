@@ -1,4 +1,4 @@
-annotations_file: "/content/drive/MyDrive/music_recommender/metadata.csv"
+﻿annotations_file: "/content/drive/MyDrive/music_recommender/metadata.csv"
 val_annotations_file: "/content/drive/MyDrive/music_recommender/val_metadata.csv"
 music_dir: "/content/drive/MyDrive/music_recommender"
 temp_dir: "/content/drive/MyDrive/music_recommender/spectrograms"

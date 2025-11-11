@@ -1,1 +1,1 @@
-IMAGE_SIZE = (224, 224)
+﻿IMAGE_SIZE = (224, 224)
