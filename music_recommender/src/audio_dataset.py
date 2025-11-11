@@ -30,7 +30,7 @@ class RecommendationDataset(Dataset):
         column_names = self.img_labels.columns
         row = {column_name: value for column_name, value in zip(column_names, self.img_labels.iloc[idx].values)}
         images = []
-        audio_path = os.path.join(self.music_dir, f"{row[('filename', '')]}.wav".replace(":", "：").replace("\"", "＂").replace("/", "⧸"))
+        audio_path = os.path.join(self.music_dir, f"{row[('filename', '')]}.wav".replace(":", "ďĽš").replace("\"", "ďĽ‚").replace("/", "â§¸"))
         audio = AudioSample(filepath=audio_path, temp_dir=self.temp_dir)
         # TODO paralellize
         for part in self.music_parts:

@@ -20,7 +20,7 @@ if __name__ == "__main__":
 
     for filename in df["filename"].unique():
         file_df = df[df["filename"] == filename]
-        filename = filename.replace(":", "：").replace("\"", "＂").replace("/", "⧸")
+        filename = filename.replace(":", "ďĽš").replace("\"", "ďĽ‚").replace("/", "â§¸")
         if len(file_df) == 0:
             continue
         file_df["no"] = file_df.groupby(["type"]).cumcount()

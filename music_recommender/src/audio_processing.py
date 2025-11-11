@@ -71,5 +71,5 @@ if __name__ == "__main__":
     #     if os.path.isfile(sample_path):
     #         audio_1 = AudioSample(filepath=sample_path)
     #         spec_1 = audio_1.to_spectrogram()
-    # image = cv2.imread(r"C:\Users\skrzy\Music\sample_music\01 - The Golden Age [Beck： Sea Change].png", cv2.IMREAD_UNCHANGED)
+    # image = cv2.imread(r"C:\Users\skrzy\Music\sample_music\01 - The Golden Age [BeckďĽš Sea Change].png", cv2.IMREAD_UNCHANGED)
     # print(image)

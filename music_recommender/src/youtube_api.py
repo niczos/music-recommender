@@ -45,13 +45,13 @@ def download_audio(url, output_folder: str):
         info_dict = video.extract_info(url, download=True)
         video_title = info_dict['title']
         print(video_title)
-        # jeśli plik istnieje pomiń
+        # jeĹ›li plik istnieje pomiĹ„
         if any(fname.startswith(os.path.basename(url)) for fname in os.listdir(output_folder)):
             return video_title
         try:
             video.download([url])
         except yt_dlp.utils.DownloadError as e:
-            print(f"Nie udało się pobrać pliku WAV dla {url}: {e}")
+            print(f"Nie udaĹ‚o siÄ™ pobraÄ‡ pliku WAV dla {url}: {e}")
             # TODO napraw
             return None
     return video_title

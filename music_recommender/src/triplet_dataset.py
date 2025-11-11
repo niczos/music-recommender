@@ -43,7 +43,7 @@ class TripletRecommendationDataset(RecommendationDataset):
         images = []
         # Base track name for constructing file paths
         base_name = str(row[("filename", "")])
-        sanitized_name = base_name.replace(":", "：").replace("\"", "＂").replace("/", "⧸")
+        sanitized_name = base_name.replace(":", "ďĽš").replace("\"", "ďĽ‚").replace("/", "â§¸")
         
         # Load and transform the anchor and positive spectrogram images
         for segment in chosen_segments:
@@ -61,7 +61,7 @@ class TripletRecommendationDataset(RecommendationDataset):
         
         # Choose a random segment from the other track as the negative example
         base_name_neg = str(other_row[("filename", "")])
-        sanitized_name_neg = base_name_neg.replace(":", "：").replace("\"", "＂").replace("/", "⧸")
+        sanitized_name_neg = base_name_neg.replace(":", "ďĽš").replace("\"", "ďĽ‚").replace("/", "â§¸")
         other_segments = [name for name in type_columns if not pd.isna(other_row[(name, "beginning_time")])]
         neg_segment = random.choice(other_segments)
         neg_image_file = f"{sanitized_name_neg}_{neg_segment}.wav.png"

@@ -20,8 +20,8 @@ warnings.filterwarnings('ignore')
 class SafeTripletDataset(torch.utils.data.Dataset):
     '''
     Owijka na TripletRecommendationDataset.
-    Jeœli __getitem__ rzuci FileNotFoundError (brak spektrogramu),
-    zwraca None i zwiêksza licznik pominiêæ.
+    JeÅ›li __getitem__ rzuci FileNotFoundError (brak spektrogramu),
+    zwraca None i zwiÄ™ksza licznik pominiÄ™Ä‡.
     '''
     def __init__(self, base_ds):
         self.base = base_ds
@@ -39,17 +39,17 @@ class SafeTripletDataset(torch.utils.data.Dataset):
             return None
 
 def safe_collate(batch):
-    '''Usuwa None'y z batcha (czyli pominiête rekordy).'''
+    '''Usuwa None'y z batcha (czyli pominiÄ™te rekordy).'''
     batch = [b for b in batch if b is not None]
-    # Je¿eli ca³y batch by³ do wyrzucenia, spróbujemy oddaæ pusty batch
-    # o poprawnym typie — default_collate na pustej liœcie wywali b³¹d,
-    # wiêc w tym rzadkim wypadku zwracamy None i trening pominie taki batch,
-    # jeœli train_model to obs³uguje; je¿eli nie, lepiej utrzymywaæ batch_size
-    # i dane tak, aby do tej sytuacji nie dochodzi³o.
+    # JeÅ¼eli caÅ‚y batch byÅ‚ do wyrzucenia, sprÃ³bujemy oddaÄ‡ pusty batch
+    # o poprawnym typie â€” default_collate na pustej liÅ›cie wywali bÅ‚Ä…d,
+    # wiÄ™c w tym rzadkim wypadku zwracamy None i trening pominie taki batch,
+    # jeÅ›li train_model to obsÅ‚uguje; jeÅ¼eli nie, lepiej utrzymywaÄ‡ batch_size
+    # i dane tak, aby do tej sytuacji nie dochodziÅ‚o.
     if not batch:
-        # Minimalny bezpieczny fallback: zwróæ None.
-        # Jeœli Twój train_model nie toleruje None, ustaw batch_size mniejsze
-        # lub zadbaj, by w batchu zawsze coœ by³o.
+        # Minimalny bezpieczny fallback: zwrÃ³Ä‡ None.
+        # JeÅ›li TwÃ³j train_model nie toleruje None, ustaw batch_size mniejsze
+        # lub zadbaj, by w batchu zawsze coÅ› byÅ‚o.
         return None
     return default_collate(batch)
 # ============================================
@@ -107,7 +107,7 @@ def main(config, resume_epoch=0, checkpoint_path=None):
         train_ds,
         batch_size=config["batch_size"],
         shuffle=True,
-        num_workers=0,            # wa¿ne dla poprawnego liczenia skipped
+        num_workers=0,            # waÅ¼ne dla poprawnego liczenia skipped
         collate_fn=safe_collate,  # usuwa None
     )
     val_loader = DataLoader(
@@ -139,9 +139,9 @@ def main(config, resume_epoch=0, checkpoint_path=None):
     plot_loss_history(training_loss_history, validation_loss_history,
                       filepath=os.path.join(results_dir, "loss_history.png"))
 
-    # ===== NEW: raport pominiêæ =====
+    # ===== NEW: raport pominiÄ™Ä‡ =====
     skipped_total = train_ds.skipped_missing + val_ds.skipped_missing
-    print(f"[INFO] Pominietych próbek (brak spektrogramu): "
+    print(f"[INFO] Pominietych prÃ³bek (brak spektrogramu): "
           f"train={train_ds.skipped_missing}, val={val_ds.skipped_missing}, razem={skipped_total}")
 
 if __name__ == "__main__":
