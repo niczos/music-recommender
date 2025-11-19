@@ -1,75 +1,108 @@
-﻿import warnings
-
-warnings.simplefilter(action='ignore', category=FutureWarning)
+﻿import os
 import librosa
-import matplotlib.pyplot as plt
+import librosa.display
 import numpy as np
-import cv2
-import soundfile as sf
-import os
+import matplotlib.pyplot as plt
+from PIL import Image
+
+def ensure_dir(path):
+    if not os.path.exists(path):
+        os.makedirs(path)
 
 
-class AudioSample:
-    def __init__(self, filepath: str, temp_dir: str, sample_rate: int | None = None):
-        if not os.path.exists(filepath):
-            raise FileNotFoundError(f"No such file: {filepath}")
-        self.filepath = filepath
-        if sample_rate is None:
-            self.y, self.sample_rate = librosa.load(path=self.filepath)
-        else:
-            self.y, _ = librosa.load(path=self.filepath, sr=sample_rate)
-            self.sample_rate = sample_rate
-        self.temp_dir = temp_dir
+def mel_spectrogram_fixed(
+    audio_path,
+    sr=22050,
+    n_mels=128,
+    hop_length=512,
+    max_frames=512,
+):
+    """
+    Tworzy mel-spektrogram:
+    - log-Mel,
+    - przycięcie lub zero-padding do max_frames,
+    - zwraca numpy array (n_mels, max_frames)
+    """
 
-    def to_spectrogram(self, beginning: float | None = None, end: float | None = None) -> np.ndarray:
-        if beginning is not None and end is not None:
-            audio_sample = self.y[int(beginning * self.sample_rate): int(end * self.sample_rate)]
-        else:
-            audio_sample = self.y.copy()
-        # Extract Mel Spectrogram
-        mel_spectrogram = librosa.feature.melspectrogram(y=audio_sample, sr=self.sample_rate)
+    # ---- Wczytaj audio ----
+    y, sr = librosa.load(audio_path, sr=sr)
 
-        # Convert Decibels (Log Scale)
-        raw_spectrogram = librosa.power_to_db(mel_spectrogram, ref=np.max)
-        librosa.display.specshow(raw_spectrogram, cmap='viridis')
-        plt.axis('off')
-        # output_filename = os.path.splitext(os.path.basename(self.filepath))[0]
-        # output_filepath = os.path.join(self.temp_dir, output_filename)
-        # plt.savefig(output_filepath)
-        # return cv2.imread(output_filepath + ".png")
-        figure = plt.gcf()
-        figure.set_size_inches(12, 1)
-        figure.set_dpi(50)
+    # ---- Mel-spektrogram ----
+    S = librosa.feature.melspectrogram(
+        y=y,
+        sr=sr,
+        n_mels=n_mels,
+        hop_length=hop_length
+    )
+    S_db = librosa.power_to_db(S, ref=np.max)
 
-        figure.canvas.draw()
+    # ---- Przycinanie / padding ----
+    frames = S_db.shape[1]
 
-        b = figure.axes[0].get_window_extent()
-        img = np.array(figure.canvas.buffer_rgba())
-        img = img[int(b.y0):int(b.y1), int(b.x0):int(b.x1)]
-        return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    if frames > max_frames:
+        # bierzemy środkowe okno – zwykle stabilniejsze niż początek/koniec
+        start = (frames - max_frames) // 2
+        S_db = S_db[:, start:start + max_frames]
 
-    def to_mp3(self, name:str, output_dir: str, beginning: float | None = None, end: float | None = None) -> np.ndarray:
-        if beginning is not None and end is not None:
-            audio_sample = self.y[int(beginning * self.sample_rate): int(end * self.sample_rate)]
-        else:
-            audio_sample = self.y.copy()
-        filepath = os.path.join(output_dir, f'{name}.wav')
-        sf.write(filepath, audio_sample, self.sample_rate, format='wav', subtype='PCM_24')
+    elif frames < max_frames:
+        pad_width = max_frames - frames
+        S_db = np.pad(
+            S_db,
+            pad_width=((0, 0), (0, pad_width)),
+            mode='constant',
+            constant_values=-80.0  # reprezentuje ciszę
+        )
+
+    return S_db
+
+
+def save_spectrogram_png(S_db, output_path, target_size=(224, 224)):
+    """
+    Zapisuje spektrogram jako PNG 224×224:
+    - bez osi,
+    - bez marginesów,
+    - z resize po zapisaniu.
+    """
+
+    plt.figure(figsize=(4, 4))
+    librosa.display.specshow(S_db, cmap='magma')
+    plt.axis("off")
+    plt.tight_layout(pad=0)
+
+    # Tymczasowy zapis
+    plt.savefig(output_path, bbox_inches='tight', pad_inches=0)
+    plt.close()
+
+    # Resize PNG do 224x224
+    img = Image.open(output_path)
+    img = img.resize(target_size, Image.BILINEAR)
+    img.save(output_path)
+
+
+def process_audio_folder(audio_dir, output_dir, max_frames=512):
+    """
+    Przechodzi po wszystkich .wav i generuje spektrogramy PNG
+    z pad/crop → resize.
+    """
+
+    ensure_dir(output_dir)
+
+    files = [f for f in os.listdir(audio_dir) if f.lower().endswith(".wav")]
+
+    for file in files:
+        in_path = os.path.join(audio_dir, file)
+        base = file.replace(".wav", "")
+        out_path = os.path.join(output_dir, base + ".wav.png")
+
+        try:
+            S_db = mel_spectrogram_fixed(in_path, max_frames=max_frames)
+            save_spectrogram_png(S_db, out_path)
+        except Exception as e:
+            print(f"[ERROR] {file}: {e}")
+
 
 if __name__ == "__main__":
-    folder_path = r"/home/nika/music-recommender-system/sample_music/"
-    temp_dir = r"C:\Users\skrzy\Music\sample_music"
-    folder_path = r"C:\Users\skrzy\Music\sample_music"
-    filename = "Ave Verum Corpus.wav"
-    sample_path = os.path.join(folder_path, filename)
-    audio_1 = AudioSample(filepath=sample_path, temp_dir=temp_dir)
-    spec_1 = audio_1.to_mp3(output_dir=r"C:\Users\skrzy\Music", beginning=0, end=15)
+    AUDIO_DIR = "C:/Users/nikaj/source/repos/music-recommender-system/data/new/cutted"
+    OUTPUT_DIR = "C:/Users/nikaj/source/repos/music-recommender-system/data/new/new_spectrograms"
 
-
-    # for filename in os.listdir(folder_path):
-    #     sample_path = os.path.join(folder_path, filename)
-    #     if os.path.isfile(sample_path):
-    #         audio_1 = AudioSample(filepath=sample_path)
-    #         spec_1 = audio_1.to_spectrogram()
-    # image = cv2.imread(r"C:\Users\skrzy\Music\sample_music\01 - The Golden Age [BeckďĽš Sea Change].png", cv2.IMREAD_UNCHANGED)
-    # print(image)
+    process_audio_folder(AUDIO_DIR, OUTPUT_DIR, max_frames=512)
