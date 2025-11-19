@@ -112,7 +112,7 @@ def main(config, resume_epoch=0, checkpoint_path=None):
         shuffle=False,
         num_workers=0,
         collate_fn=safe_collate,
-        drop_last=True, 
+        drop_last=False, 
     )
 
     criterion = TripletLoss(margin=config["triplet_loss_margin"])

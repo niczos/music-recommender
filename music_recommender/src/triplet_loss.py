@@ -34,6 +34,7 @@ def validation_step(model, val_loader, criterion, device):
             if batch is None:
                 skipped_batches += 1
                 continue
+
             try:
                 anchor, positive, negative = batch
             except Exception:
@@ -42,19 +43,31 @@ def validation_step(model, val_loader, criterion, device):
                 continue
 
             anchor, positive, negative = (
-                anchor.to(device), positive.to(device), negative.to(device)
+                anchor.to(device),
+                positive.to(device),
+                negative.to(device)
             )
+
             emb_a = model(anchor)
             emb_p = model(positive)
             emb_n = model(negative)
+
             loss = criterion(emb_a, emb_p, emb_n)
             val_loss += loss.item()
             total += 1
 
-    avg = (val_loss / total) if total > 0 else float("nan")
     if skipped_batches:
         print(f"[VAL] Pomięte batchy (puste/niepoprawne): {skipped_batches}")
+
+    if total == 0:
+        print("[WARN] validation_step: brak przetworzonych batchy walidacyjnych!")
+        return float("nan")
+
+    avg = val_loss / total
     return avg
+
+
+
 
 
 # === Pojedynczy krok treningu ===
