@@ -144,10 +144,11 @@ class TripletRecommendationDataset(RecommendationDataset):
     def _sanitize_filename(name: str) -> str:
         return (
             name
-            .replace(":", "ďĽš")
-            .replace("\"", "ďĽ‚")
-            .replace("/", "â§¸")
-        )
+            .replace(":", "_")   # dwukropek → podkreślnik
+            .replace("/", "_")   # slash → podkreślnik
+            .replace("\"", "")   # cudzysłów usuwamy
+    )
+
 
     def _load_image(self, sanitized_base: str, segment_name: str) -> torch.Tensor:
         image_file = f"{sanitized_base}_{segment_name}.wav.png"
