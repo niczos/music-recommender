@@ -118,7 +118,7 @@ def main(config, resume_epoch=0, checkpoint_path=None):
     criterion = TripletLoss(margin=config["triplet_loss_margin"])
     optimizer = optim.Adam(model.parameters(), lr=config["lr"])
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    optimizer, mode='min', factor=0.5, patience=2, min_lr=1e-6, verbose=True
+    optimizer, mode='min', factor=0.5, patience=2, min_lr=1e-6
 )
 
     
