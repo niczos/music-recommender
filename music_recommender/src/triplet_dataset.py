@@ -144,9 +144,6 @@ class TripletRecommendationDataset(RecommendationDataset):
     def _sanitize_filename(name: str) -> str:
         return (
             name
-            .replace(":", "_")   # dwukropek → podkreślnik
-            .replace("/", "_")   # slash → podkreślnik
-            .replace("\"", "")   # cudzysłów usuwamy
     )
 
 
