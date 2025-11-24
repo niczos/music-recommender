@@ -8,8 +8,6 @@ from music_recommender.src.consts import IMAGE_SIZE
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
-
-from music_recommender.src.audio_processing import AudioSample
 from music_recommender.src.image_utils import transforms
 
 
