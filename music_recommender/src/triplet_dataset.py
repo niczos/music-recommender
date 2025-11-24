@@ -41,7 +41,7 @@ class TripletRecommendationDataset(RecommendationDataset):
             transforms=transforms,
         )
 
-        self.spectrogram_dir = os.path.join(music_dir, "spectrograms")
+        self.spectrogram_dir = os.path.join(music_dir, "new_spectrograms")
 
         # tu prekomputujemy wszystkie pary pozytywne
         self._build_pairs_index()
