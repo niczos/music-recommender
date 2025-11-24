@@ -98,7 +98,7 @@ def train_model(
     val_loader,
     criterion,
     optimizer,
-    scheduler,
+    #scheduler,
     device,
     num_epochs,
     checkpoint_path,
@@ -235,7 +235,7 @@ def train_model(
                 else:
                     epochs_no_improve += 1
 
-                scheduler.step(validation_loss)
+                #scheduler.step(validation_loss)
 
             epoch_time = time.time() - epoch_start_time
             print(f"Epoch [{epoch + 1}/{num_epochs}] Average Training Loss: {avg_epoch_loss:.6f}, Epoch Time: {epoch_time:.2f}s")
