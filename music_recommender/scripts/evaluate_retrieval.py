@@ -1,12 +1,13 @@
 ﻿import os
 import json
 import warnings
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, List
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from music_recommender.src.triplet_dataset import TripletRecommendationDataset
 from music_recommender.src.image_utils import transforms
@@ -14,6 +15,31 @@ from music_recommender.src.model import ConvNextTinyEncoder
 from music_recommender.src.utils import get_config
 
 warnings.filterwarnings("ignore")
+
+
+# =====================================================
+#   TU UZUPEŁNIASZ ŚCIEŻKI DO KONKRETNYCH MODELI
+# =====================================================
+
+EXPERIMENTS: List[Dict[str, str]] = [
+ {
+        "name": "margin_0.01_lr1e-5_sched",
+        "checkpoint": "/content/drive/MyDrive/music_recommender/results/triplet_ssrl_learning_20251124_115322/model_epoch_20.pth",
+    },
+    {
+        "name": "margin_0.1_lr1e-5_sched",
+        "checkpoint": "/content/drive/MyDrive/music_recommender/results/triplet_ssrl_learning_20251124_135949/model_epoch_20.pth",
+    },
+    {
+        "name": "margin_0.1_lr1e-4_nosched_bs16",
+        "checkpoint": "/content/drive/MyDrive/music_recommender/results/triplet_ssrl_learning_20251124_220244/model_epoch_30.pth",
+    },
+    # jeśli chcesz jeszcze wariant bs32:
+    # {
+    #     "name": "margin_0.1_lr1e-4_nosched_bs32",
+    #     "checkpoint": "/content/drive/MyDrive/music_recommender/results/POPRWADZ_TUTAJ/model_epoch_30.pth",
+    # },
+]
 
 
 # -----------------------------------------------------
@@ -93,6 +119,7 @@ def compute_embeddings(
         for imgs, ids in loader:
             imgs = imgs.to(device)
             emb = model(imgs)
+            # L2-normalizacja → cosine similarity = iloczyn skalarny
             emb = torch.nn.functional.normalize(emb, p=2, dim=1)
             all_emb.append(emb.cpu())
             all_ids.append(torch.tensor(ids))
@@ -117,18 +144,20 @@ def retrieval_metrics(
     - sprawdzamy, na jakiej pozycji jest pierwszy fragment z tej samej piosenki.
     """
     sim = emb @ emb.T  # cosine, bo emb są znormalizowane
-    sim.fill_diagonal_(-1e9)
+    sim.fill_diagonal_(-1e9)  # wyłączamy podobieństwo z samym sobą
     N = sim.shape[0]
 
     ranks = []
     recalls = {k: 0 for k in ks}
 
     for i in range(N):
+        # sortujemy od najbardziej podobnych
         order = torch.argsort(sim[i], descending=True)
         same = (ids[order] == ids[i])
         pos = torch.nonzero(same, as_tuple=False)
 
         if pos.numel() == 0:
+            # brak innego fragmentu z tej samej piosenki
             continue
 
         r = int(pos[0].item()) + 1  # 1-based rank
@@ -284,7 +313,7 @@ def main():
     config = get_config()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # bazowy dataset walidacyjny – ten sam, co do treningu, ale używamy go tylko do info/obrazków
+    # bazowy dataset walidacyjny – ten sam, co do treningu, ale używamy go do generowania fragmentów
     base_val = TripletRecommendationDataset(
         annotations_file=config["val_annotations_file"],
         music_dir=config["music_dir"],
@@ -301,75 +330,123 @@ def main():
         num_workers=0,
     )
 
-    # TODO: dostosuj do tego, jak zapisujesz model w treningu
-    # np. jeśli zapisujesz w results_dir jako "model.pth":
-    # model_path = "/content/drive/MyDrive/.../twoj_eksperyment/model.pth"
-    model_path = config.get("checkpoint_path", None)
-    if model_path is None:
-        raise ValueError("Dodaj do config['checkpoint_path'] ścieżkę do zapisanego modelu.")
+    summary_rows = []
 
-    model = ConvNextTinyEncoder(pretrained=False).to(device)
-    state = torch.load(model_path, map_location=device)
-    # jeśli zapisujesz całe state_dict:
-    model.load_state_dict(state)
+    for exp in EXPERIMENTS:
+        name = exp["name"]
+        model_path = exp["checkpoint"]
 
-    # 1) embeddingi
-    embeddings, track_ids = compute_embeddings(model, eval_loader, device)
+        if not os.path.isfile(model_path):
+            print(f"[WARN] Pomijam {name} – brak pliku: {model_path}")
+            continue
 
-    # 2) retrieval
-    retrieval = retrieval_metrics(embeddings, track_ids, ks=(1, 5, 10))
+        print("\n==============================")
+        print(f"   Ewaluacja modelu: {name}")
+        print(f"   Checkpoint: {model_path}")
+        print("==============================")
 
-    # 3) same vs different
-    same_diff = same_diff_metrics(embeddings, track_ids)
+        # 1) wczytanie modelu
+        model = ConvNextTinyEncoder(pretrained=False).to(device)
+        state = torch.load(model_path, map_location=device)
 
-    # katalog na wyniki
-    results_dir = config.get("eval_output_dir", None)
-    if results_dir is None:
-        # domyślnie: obok modelu
-        results_dir = os.path.join(os.path.dirname(model_path), "evaluation")
-    os.makedirs(results_dir, exist_ok=True)
+        if isinstance(state, dict) and "model_state_dict" in state:
+            model.load_state_dict(state["model_state_dict"])
+        else:
+            model.load_state_dict(state)
 
-    # zapis metryk do JSON
-    metrics = {
-        "retrieval": retrieval,
-        "same_diff": {
-            k: v for k, v in same_diff.items()
-            if k not in ("pos_sims", "neg_sims")
-        },
-    }
-    with open(os.path.join(results_dir, "metrics.json"), "w", encoding="utf-8") as f:
-        json.dump(metrics, f, indent=4, ensure_ascii=False)
+        # 2) embeddingi
+        embeddings, track_ids = compute_embeddings(model, eval_loader, device)
 
-    # wykresy
-    plot_recall_bar(
-        retrieval,
-        save_path=os.path.join(results_dir, "recall_at_k.png"),
-    )
+        # 3) retrieval
+        retrieval = retrieval_metrics(embeddings, track_ids, ks=(1, 5, 10))
 
-    if same_diff["pos_sims"].size > 0 and same_diff["neg_sims"].size > 0:
-        plot_similarity_hist(
-            same_diff["pos_sims"],
-            same_diff["neg_sims"],
-            save_path=os.path.join(results_dir, "similarity_hist.png"),
+        # 4) same vs different
+        same_diff = same_diff_metrics(embeddings, track_ids)
+
+        # katalog na wyniki dla tego modelu
+        base_results_dir = config.get("eval_output_dir", None)
+        if base_results_dir is None:
+            # domyślnie: obok modelu
+            base_results_dir = os.path.join(os.path.dirname(model_path), "evaluation")
+        results_dir = os.path.join(base_results_dir, name)
+        os.makedirs(results_dir, exist_ok=True)
+
+        # zapis metryk do JSON
+        metrics = {
+            "retrieval": retrieval,
+            "same_diff": {
+                k: v for k, v in same_diff.items()
+                if k not in ("pos_sims", "neg_sims")
+            },
+        }
+        with open(os.path.join(results_dir, "metrics.json"), "w", encoding="utf-8") as f:
+            json.dump(metrics, f, indent=4, ensure_ascii=False)
+
+        # wykresy
+        plot_recall_bar(
+            retrieval,
+            save_path=os.path.join(results_dir, "recall_at_k.png"),
         )
 
-    # print dla logów / konsoli
-    print("\n=== RETRIEVAL ===")
-    print(f"Liczba fragmentów (N): {retrieval['num_queries']}")
-    print(f"Liczba zapytań z >=1 pozytywnym: {retrieval['num_queries_with_pos']}")
-    for k, v in retrieval["recall"].items():
-        print(f"Recall@{k}: {v:.3f}")
-    print(f"Mean rank: {retrieval['mean_rank']:.2f}")
-    print(f"MRR: {retrieval['MRR']:.3f}")
+        if same_diff["pos_sims"].size > 0 and same_diff["neg_sims"].size > 0:
+            plot_similarity_hist(
+                same_diff["pos_sims"],
+                same_diff["neg_sims"],
+                save_path=os.path.join(results_dir, "similarity_hist.png"),
+            )
 
-    print("\n=== SAME vs DIFFERENT ===")
-    print(f"Średnie similarity (ta sama piosenka): {same_diff['pos_mean']}")
-    print(f"Średnie similarity (różne piosenki):   {same_diff['neg_mean']}")
-    print(f"Najlepsza accuracy: {same_diff['best_acc']}")
-    print(f"Próg similarity:    {same_diff['best_threshold']}")
-    print(f"Liczba pozytywnych par: {same_diff['num_pos_pairs']}")
-    print(f"Liczba negatywnych par: {same_diff['num_neg_pairs']}")
-    print(f"Wykresy i metryki zapisane w: {results_dir}")
+        # print do konsoli
+        print("\n=== RETRIEVAL ===")
+        print(f"Liczba fragmentów (N): {retrieval['num_queries']}")
+        print(f"Liczba zapytań z >=1 pozytywnym: {retrieval['num_queries_with_pos']}")
+        for k, v in retrieval["recall"].items():
+            print(f"Recall@{k}: {v:.3f}")
+        print(f"Mean rank: {retrieval['mean_rank']:.2f}")
+        print(f"MRR: {retrieval['MRR']:.3f}")
+
+        print("\n=== SAME vs DIFFERENT ===")
+        print(f"Średnie similarity (ta sama piosenka): {same_diff['pos_mean']}")
+        print(f"Średnie similarity (różne piosenki):   {same_diff['neg_mean']}")
+        print(f"Najlepsza accuracy: {same_diff['best_acc']}")
+        print(f"Próg similarity:    {same_diff['best_threshold']}")
+        print(f"Liczba pozytywnych par: {same_diff['num_pos_pairs']}")
+        print(f"Liczba negatywnych par: {same_diff['num_neg_pairs']}")
+        print(f"Wykresy i metryki zapisane w: {results_dir}")
+
+        # dopisz wiersz do zbiorczego podsumowania
+        summary_rows.append({
+            "name": name,
+            "checkpoint": model_path,
+            "N_fragments": retrieval["num_queries"],
+            "N_queries_with_pos": retrieval["num_queries_with_pos"],
+            "Recall@1": retrieval["recall"][1],
+            "Recall@5": retrieval["recall"][5],
+            "Recall@10": retrieval["recall"][10],
+            "Mean_rank": retrieval["mean_rank"],
+            "MRR": retrieval["MRR"],
+            "pos_mean_sim": same_diff["pos_mean"],
+            "neg_mean_sim": same_diff["neg_mean"],
+            "same_diff_best_acc": same_diff["best_acc"],
+            "same_diff_best_thr": same_diff["best_threshold"],
+            "num_pos_pairs": same_diff["num_pos_pairs"],
+            "num_neg_pairs": same_diff["num_neg_pairs"],
+        })
+
+    # zapis zbiorczy – jak „excel” z porównaniem modeli
+    if summary_rows:
+        base_results_dir = config.get("eval_output_dir", None)
+        if base_results_dir is None:
+            # np. bierzemy katalog pierwszego checkpointa
+            any_cp = EXPERIMENTS[0]["checkpoint"]
+            base_results_dir = os.path.join(os.path.dirname(any_cp), "evaluation")
+        os.makedirs(base_results_dir, exist_ok=True)
+
+        summary_df = pd.DataFrame(summary_rows)
+        summary_path = os.path.join(base_results_dir, "eval_summary.csv")
+        summary_df.to_csv(summary_path, index=False)
+        print(f"\nZbiorcze podsumowanie zapisane w: {summary_path}")
+    else:
+        print("Brak udanych ewaluacji – sprawdź ścieżki w EXPERIMENTS.")
 
 
 if __name__ == "__main__":
