@@ -2,7 +2,7 @@
 
 from torch.utils.data import DataLoader
 
-from music_recommender.src.audio_dataset import RecommendationDataset
+from music_recommender.src.audio_dataset import AudioDataset
 
 
 def get_dataloaders(annotations_file: str, music_dir: str, temp_dir: str, music_parts: list[str],
