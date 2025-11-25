@@ -12,7 +12,6 @@ import pandas as pd
 from music_recommender.src.triplet_dataset import TripletRecommendationDataset
 from music_recommender.src.image_utils import transforms
 from music_recommender.src.model import ConvNextTinyEncoder
-from music_recommender.src.utils import get_config
 
 warnings.filterwarnings("ignore")
 
@@ -22,7 +21,7 @@ warnings.filterwarnings("ignore")
 # =====================================================
 
 EXPERIMENTS: List[Dict[str, str]] = [
- {
+    {
         "name": "margin_0.01_lr1e-5_sched",
         "checkpoint": "/content/drive/MyDrive/music_recommender/results/triplet_ssrl_learning_20251124_115322/model_epoch_20.pth",
     },
@@ -34,7 +33,7 @@ EXPERIMENTS: List[Dict[str, str]] = [
         "name": "margin_0.1_lr1e-4_nosched_bs16",
         "checkpoint": "/content/drive/MyDrive/music_recommender/results/triplet_ssrl_learning_20251124_220244/model_epoch_30.pth",
     },
-    # jeśli chcesz jeszcze wariant bs32:
+    # jeśli chcesz, możesz dodać kolejny, np. bs32:
     # {
     #     "name": "margin_0.1_lr1e-4_nosched_bs32",
     #     "checkpoint": "/content/drive/MyDrive/music_recommender/results/POPRWADZ_TUTAJ/model_epoch_30.pth",
@@ -122,10 +121,14 @@ def compute_embeddings(
             # L2-normalizacja → cosine similarity = iloczyn skalarny
             emb = torch.nn.functional.normalize(emb, p=2, dim=1)
             all_emb.append(emb.cpu())
-            all_ids.append(torch.tensor(ids))
 
-    embeddings = torch.cat(all_emb, dim=0)  # (N, D)
-    track_ids = torch.cat(all_ids, dim=0)   # (N,)
+            # ids może być tensorem / listą – uprośćmy do listy intów
+            # zakładamy, że track_id jest numeryczne (np. salami_id)
+            ids_list = [int(x) for x in ids]
+            all_ids.extend(ids_list)
+
+    embeddings = torch.cat(all_emb, dim=0)                    # (N, D)
+    track_ids = torch.tensor(all_ids, dtype=torch.long)       # (N,)
     return embeddings, track_ids
 
 
@@ -306,11 +309,10 @@ def plot_similarity_hist(
 
 
 # -----------------------------------------------------
-# MAIN
+# MAIN – teraz przyjmuje config jako argument
 # -----------------------------------------------------
 
-def main():
-    config = get_config()
+def main(config: Dict[str, Any]):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # bazowy dataset walidacyjny – ten sam, co do treningu, ale używamy go do generowania fragmentów
@@ -434,9 +436,7 @@ def main():
 
     # zapis zbiorczy – jak „excel” z porównaniem modeli
     if summary_rows:
-        base_results_dir = config.get("eval_output_dir", None)
         if base_results_dir is None:
-            # np. bierzemy katalog pierwszego checkpointa
             any_cp = EXPERIMENTS[0]["checkpoint"]
             base_results_dir = os.path.join(os.path.dirname(any_cp), "evaluation")
         os.makedirs(base_results_dir, exist_ok=True)
@@ -450,4 +450,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise RuntimeError("Użyj tego skryptu z Colaba: from ... import main; main(config)")
