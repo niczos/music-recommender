@@ -4,12 +4,13 @@ import warnings
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=UserWarning)
-from music_recommender.src.consts import IMAGE_SIZE
+
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from music_recommender.src.image_utils import transforms
 
+IMAGE_SIZE = (224, 224)
 
 class RecommendationDataset(Dataset):
     def __init__(self, annotations_file: str, music_dir: str, temp_dir: str, music_parts: list[str],
