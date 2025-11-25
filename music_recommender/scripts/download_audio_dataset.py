@@ -1,71 +1,138 @@
 ﻿import os
+from yt_dlp import YoutubeDL
+import csv
 
-import yt_dlp
-import tqdm
+# Ścieżki wejściowe (można zmienić w razie potrzeby lub przerobić na argumenty skryptu)
+PAIRINGS_CSV = "salami_youtube_pairings.csv"
+TRAIN_META_CSV = "metadata.csv"
+VAL_META_CSV = "val_metadata.csv"
+
+# Ścieżka wyjściowa dla danych (folder do którego zostaną pobrane pliki)
+OUTPUT_DIR = "./data"
+AUDIO_DIR = os.path.join(OUTPUT_DIR, "audio")
+
+# Utwórz foldery wyjściowe jeśli nie istnieją
+os.makedirs(AUDIO_DIR, exist_ok=True)
+
+# Wczytaj mapowanie SALAMI -> YouTube z pliku pairings
 import pandas as pd
+pairings_df = pd.read_csv(PAIRINGS_CSV)
+pairings_dict = {}
+for _, row in pairings_df.iterrows():
+    sid = int(row['salami_id'])
+    pairings_dict[sid] = {
+        'youtube_id': str(row['youtube_id']),
+        'onset_in_salami': float(row['onset_in_salami']),
+        'coverage': float(row['coverage'])
+    }
 
-from sklearn.model_selection import train_test_split
-from music_recommender.src.youtube_api import get_metadata, youtube_id_to_url, download_audio
+# Wczytaj metadata i val_metadata (jako stringi, żeby zachować formatowanie dokładnie)
+train_df_str = pd.read_csv(TRAIN_META_CSV, dtype=str)
+val_df_str = pd.read_csv(VAL_META_CSV, dtype=str)
+# Równolegle wczytaj te pliki również jako numeryczne (dla obliczeń filtrujących)
+train_df = pd.read_csv(TRAIN_META_CSV)
+val_df = pd.read_csv(VAL_META_CSV)
 
+# Filtrowanie segmentów poza pokryciem audio
+to_drop_train = []
+for idx, row in train_df.iterrows():
+    sid = int(row['salami_id'])
+    end_time = float(row['end_time'])
+    if sid in pairings_dict:
+        salami_cov_end = pairings_dict[sid]['onset_in_salami'] + pairings_dict[sid]['coverage']
+        if end_time > salami_cov_end:
+            to_drop_train.append(idx)
+to_drop_val = []
+for idx, row in val_df.iterrows():
+    sid = int(row['salami_id'])
+    end_time = float(row['end_time'])
+    if sid in pairings_dict:
+        salami_cov_end = pairings_dict[sid]['onset_in_salami'] + pairings_dict[sid]['coverage']
+        if end_time > salami_cov_end:
+            to_drop_val.append(idx)
+# Usuń wskazane wiersze z dataframów *tekstowych* (aby zachować format oryginalny dla pozostałych)
+if to_drop_train:
+    train_df_str.drop(index=to_drop_train, inplace=True)
+if to_drop_val:
+    val_df_str.drop(index=to_drop_val, inplace=True)
+# Reset indexów po usunięciu (żeby zapisać poprawnie, bez przeskoków indeksów)
+train_df_str.reset_index(drop=True, inplace=True)
+val_df_str.reset_index(drop=True, inplace=True)
 
-def run_data_download(output_folder: str, df: pd.DataFrame):
+# Zidentyfikuj wszystkie unikalne utwory do pobrania (ze zbioru treningowego i walidacyjnego)
+train_track_ids = set(train_df_str['salami_id'].astype(int).unique())
+val_track_ids = set(val_df_str['salami_id'].astype(int).unique())
+all_track_ids = train_track_ids.union(val_track_ids)
 
-    metadata_filename = os.path.join(output_folder, "metadata.csv")
-    val_metadata_filename = os.path.join(output_folder, "val_metadata.csv")
+# Przygotuj listę utworów do pobrania wraz z ich YouTube ID i tytułem (filename)
+tracks_to_download = []
+# Sklej dane z train i val, grupując po utworze, aby wziąć po jednym przykładzie (tytuł/youtube_id) na utwór
+combined_df = pd.concat([train_df_str[['salami_id', 'youtube_id', 'filename']],
+                         val_df_str[['salami_id', 'youtube_id', 'filename']]])
+grouped = combined_df.groupby('salami_id', as_index=False).first()
+for _, row in grouped.iterrows():
+    sid = int(row['salami_id'])
+    if sid in all_track_ids:
+        yt_id = str(row['youtube_id'])
+        title = str(row['filename'])
+        tracks_to_download.append({'salami_id': sid, 'youtube_id': yt_id, 'old_title': title})
 
-    metadata = []
-    limit = 100000
-    for ind, row in tqdm.tqdm(df.iterrows()):
-        if ind > limit:
-            break
-        youtube_id = row['youtube_id']
-        salami_id = row['salami_id']
-        salami_length = row['salami_length']
-        youtube_url = youtube_id_to_url(id=youtube_id)
+# Konfiguracja yt_dlp do pobierania audio
+ydl_opts = {
+    'format': 'bestaudio/best',
+    'outtmpl': os.path.join(AUDIO_DIR, '%(title)s.%(ext)s'),  # nazwa pliku wg tytułu video
+    'postprocessors': [{
+        'key': 'FFmpegExtractAudio',
+        'preferredcodec': 'mp3',
+        'preferredquality': '192'
+    }],
+    'quiet': False,  # Ustaw na True, by ukryć logi yt_dlp
+    'nocheckcertificate': True
+}
+
+print(f"Pobieranie {len(tracks_to_download)} utworów do folderu '{AUDIO_DIR}'...")
+failed_tracks = []
+
+with YoutubeDL(ydl_opts) as ydl:
+    for track in tracks_to_download:
+        sid = track['salami_id']
+        youtube_id = track['youtube_id']
+        old_title = track['old_title']
+        url = f"https://www.youtube.com/watch?v={youtube_id}"
         try:
-            filename = download_audio(youtube_url, output_folder)
-            if filename is None:
-                continue
-            sample_metadata = get_metadata(salami_id=salami_id,
-                                           salami_length=salami_length,
-                                           youtube_id=youtube_id,
-                                           filename=filename)
-            metadata.append(sample_metadata)
-        except yt_dlp.utils.DownloadError as e:
+            info = ydl.extract_info(url, download=True)
+        except Exception as e:
+            print(f"** Błąd pobierania utworu {sid} (YouTube ID: {youtube_id}): {e}")
+            failed_tracks.append(sid)
             continue
-    metadata = [x for xs in metadata for x in xs]
-    metadata_df = pd.DataFrame(metadata)
-    # Get unique YouTube IDs
-    unique_youtube_ids = metadata_df['youtube_id'].unique()
+        # Uzyskaj aktualny tytuł video z informacji zwróconych przez yt_dlp
+        new_title = info.get('title', None)
+        if new_title is None:
+            new_title = old_title  # w razie braku informacji, pozostań przy starym tytule
+        # Sprawdź, czy tytuł uległ zmianie
+        if new_title != old_title:
+            # Zaktualizuj w strukturach metadata (train/val) nazwę pliku dla tego utworu
+            train_mask = train_df_str['salami_id'].astype(int) == sid
+            val_mask = val_df_str['salami_id'].astype(int) == sid
+            if train_mask.any():
+                train_df_str.loc[train_mask, 'filename'] = new_title
+            if val_mask.any():
+                val_df_str.loc[val_mask, 'filename'] = new_title
+            print(f"(Uwaga: Zaktualizowano tytuł utworu {sid}: '{old_title}' -> '{new_title}')")
 
-    # Split the unique IDs into training and validation sets
-    train_ids, val_ids = train_test_split(unique_youtube_ids, test_size=0.2, random_state=42)
+# Usuń z dataframów segmenty utworów, które nie zostały pobrane (np. film niedostępny)
+if failed_tracks:
+    print(f"Usuwanie z metadanych {len(failed_tracks)} utworów, których nie udało się pobrać...")
+    train_df_str = train_df_str[~train_df_str['salami_id'].astype(int).isin(failed_tracks)].reset_index(drop=True)
+    val_df_str = val_df_str[~val_df_str['salami_id'].astype(int).isin(failed_tracks)].reset_index(drop=True)
 
-    # Create training and validation dataframes based on the split IDs
-    train_df = metadata_df[metadata_df['youtube_id'].isin(train_ids)]
-    val_df = metadata_df[metadata_df['youtube_id'].isin(val_ids)]
+# Zapisz wyjściowe pliki CSV (metadata.csv i val_metadata.csv) do folderu wyjściowego
+train_csv_path = os.path.join(OUTPUT_DIR, "metadata.csv")
+val_csv_path = os.path.join(OUTPUT_DIR, "val_metadata.csv")
+# Zapis z zachowaniem nagłówków i bez dodatkowego indeksu
+train_df_str.to_csv(train_csv_path, index=False, quoting=csv.QUOTE_MINIMAL)
+val_df_str.to_csv(val_csv_path, index=False, quoting=csv.QUOTE_MINIMAL)
 
-    train_df.to_csv(metadata_filename, index=False)
-    val_df.to_csv(val_metadata_filename, index=False)
-
-
-def run_parsing_test(df: pd.DataFrame):
-    for _, row in df.iterrows():
-        youtube_id = row['youtube_id']
-        salami_id = row['salami_id']
-        salami_length = row['salami_length']
-        sample_metadata = get_metadata(salami_id=salami_id,
-                                       salami_length=salami_length,
-                                       youtube_id=youtube_id,
-                                       filename="Sample")
-        print(sample_metadata)
-        break
-
-
-if __name__ == '__main__':
-    output_folder = r"C:\Users\skrzy\Music\sample_music"
-    os.makedirs(output_folder, exist_ok=True)
-    df = pd.read_csv(os.path.join(output_folder, 'salami_youtube_pairings.csv'))
-    output_folder = r"C:\Users\skrzy\Music\e2e_test"
-    run_data_download(output_folder=output_folder, df=df)
-    # run_parsing_test(df)
+print("Zakończono pobieranie i przygotowanie danych.")
+print(f"Liczba segmentów (train): {len(train_df_str)}; liczba segmentów (val): {len(val_df_str)}.")
+print(f"Pliki zapisane w folderze: {OUTPUT_DIR}")

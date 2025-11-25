@@ -15,5 +15,4 @@ def get_dataloaders(annotations_file: str, music_dir: str, temp_dir: str, music_
 
 
     train_dataloader = DataLoader(ds, batch_size=batch_size, shuffle=True)
-    #TODO? add other dataloaders
     return train_dataloader
