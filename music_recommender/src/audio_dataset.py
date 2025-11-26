@@ -1,10 +1,7 @@
 ﻿import os
 from typing import Callable
 import warnings
-
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=UserWarning)
-
+from PIL import Image
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
@@ -22,26 +19,41 @@ class RecommendationDataset(Dataset):
         self.transform = transforms
         self.temp_dir = temp_dir
 
+        # Lista (filename, part_type, segment_index)
+        self.samples = self._build_samples_list()
+
+    def _build_samples_list(self):
+        samples = []
+        for _, row in self.img_labels.iterrows():
+            filename = row[('filename', '')]
+            for part in self.music_parts:
+                index = 0
+                while True:
+                    file_name = f"{filename}_{part.lower()}_{index}.wav.png"
+                    file_path = os.path.join(self.temp_dir, file_name)
+                    if os.path.isfile(file_path):
+                        samples.append((filename, part, index))
+                        index += 1
+                    else:
+                        break
+        return samples
+
     def __len__(self):
-        return len(self.img_labels)
+        return len(self.samples)
 
     def __getitem__(self, idx: int):
-        column_names = self.img_labels.columns
-        row = {column_name: value for column_name, value in zip(column_names, self.img_labels.iloc[idx].values)}
-        images = []
-        audio_path = os.path.join(self.music_dir, f"{row[('filename', '')]}.wav".replace(":", "ďĽš").replace("\"", "ďĽ‚").replace("/", "â§¸"))
-        audio = AudioSample(filepath=audio_path, temp_dir=self.temp_dir)
-        # TODO paralellize
-        for part in self.music_parts:
-            spectrogram = audio.to_spectrogram(beginning=row[(part, "beginning_time")], end=row[(part, "end_time")])
-            transformed_image = self.transform(spectrogram)
-            images.append(transformed_image)
-        return torch.stack(images)
+        filename, part, index = self.samples[idx]
+        file_name = f"{filename}_{part.lower()}_{index}.wav.png"
+        file_path = os.path.join(self.temp_dir, file_name)
+
+        img = Image.open(file_path).convert("RGB")
+        img = self.transform(img)
+
+        return img, filename
 
     def get_title(self, idx: int):
-        column_names = self.img_labels.columns
-        row = {column_name: value for column_name, value in zip(column_names, self.img_labels.iloc[idx].values)}
-        return row[('filename', '')]
+        _, filename, _ = self.samples[idx]
+        return filename
 
     def read_annotations(self) -> pd.DataFrame:
         df = pd.read_csv(self.annotations_path)
@@ -54,8 +66,10 @@ class RecommendationDataset(Dataset):
         return df.dropna()
 
     def get_sample_by_title(self, title: str):
-        sample_idx: int = self.img_labels[self.img_labels[('filename', '')] == title].index[0]
-        return self.__getitem__(sample_idx), sample_idx
+        for idx, (filename, _, _) in enumerate(self.samples):
+            if filename == title:
+                return self.__getitem__(idx), idx
+        raise ValueError(f"Nie znaleziono utworu: {title}")
 
 
 if __name__ == '__main__':
@@ -67,6 +81,5 @@ if __name__ == '__main__':
                                music_parts=["Chorus", "Verse"],
                                transforms=transforms,
                                temp_dir=output_folder)
-    for el in ds:
-        for image in el:
-            assert image.shape == (3, *IMAGE_SIZE), image.shape
+    for img, title in ds:
+        assert img.shape == (3, *IMAGE_SIZE), img.shape
